@@ -75,7 +75,9 @@ export function DescriptionList({ items }: { items: Array<{ label: string; value
 /** Tabla responsiva con scroll horizontal en móvil. */
 export function Table({ children }: { children: ReactNode }) {
   return (
-    <div className="overflow-x-auto">
+    // `relative`: los elementos absolutos (p. ej. `sr-only`) quedan dentro del área con scroll
+    // y no ensanchan la página en móvil.
+    <div className="relative overflow-x-auto">
       <table className="w-full text-left text-sm">{children}</table>
     </div>
   )

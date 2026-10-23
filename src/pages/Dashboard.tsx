@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import { AlertOctagon, ArrowRight, FolderKanban, Plus } from 'lucide-react'
 import { useState } from 'react'
+import { AvisoEquipoTrabajo, useEquipoTrabajoActivo } from '@/features/equipos-trabajo/EquipoTrabajoActivo'
 import { useBloqueos, useProyectos, useProyectosTotal } from '@/api/hooks'
 import { useProyectoMap, useUsuarioMap } from '@/api/lookups'
 import { Badge, EstadoBadge, SemaforoBadge } from '@/components/ui/Badge'
@@ -10,7 +11,8 @@ import { Card, CardHeader, PageHeader } from '@/components/ui/Layout'
 import { cn } from '@/lib/cn'
 import { formatDate, formatDateTime } from '@/lib/format'
 import { ProyectoFormModal } from '@/features/proyectos/ProyectoFormModal'
-import { ESTADOS_PROYECTO, SEMAFOROS, type Semaforo } from '@/types/api'
+import { usePermisos } from '@/auth/AuthProvider'
+import { DEPARTAMENTOS_PROYECTO, SEMAFOROS, type Semaforo } from '@/types/api'
 
 const semaforoColor: Record<Semaforo, { bar: string; text: string }> = {
   Verde: { bar: 'bg-ok', text: 'text-ok' },
@@ -31,22 +33,27 @@ function Kpi({ label, value, loading, tone, to }: {
 }
 
 export default function Dashboard() {
+  const { creaProyectos } = usePermisos()
   const [creating, setCreating] = useState(false)
-  const total = useProyectosTotal({})
-  const verde = useProyectosTotal({ semaforo: 'Verde' })
-  const amarillo = useProyectosTotal({ semaforo: 'Amarillo' })
-  const rojo = useProyectosTotal({ semaforo: 'Rojo' })
+  // Equipo de trabajo activo (selector global): acota todo el panel.
+  const equipo = useEquipoTrabajoActivo()
+  const f = { id_equipo_trabajo: equipo.id ?? undefined }
+  const total = useProyectosTotal({ ...f })
+  const verde = useProyectosTotal({ ...f, semaforo: 'Verde' })
+  const amarillo = useProyectosTotal({ ...f, semaforo: 'Amarillo' })
+  const rojo = useProyectosTotal({ ...f, semaforo: 'Rojo' })
   const semaforoQ = { Verde: verde, Amarillo: amarillo, Rojo: rojo }
-  const estadosQ = ESTADOS_PROYECTO.map((e) => ({ estado: e, q: useProyectosTotal({ estado: e }) })) // eslint-disable-line react-hooks/rules-of-hooks
+  const deptosQ = DEPARTAMENTOS_PROYECTO.map((d) => ({ departamento: d, q: useProyectosTotal({ ...f, departamento: d }) })) // eslint-disable-line react-hooks/rules-of-hooks
+  const activos = useProyectosTotal({ ...f, estado: 'Activo' })
 
-  const recientes = useProyectos({ limit: 6 })
-  const criticos = useProyectos({ semaforo: 'Rojo', limit: 5 })
-  const bloqueos = useBloqueos({ abierto: true, limit: 200 })
+  const recientes = useProyectos({ ...f, limit: 6 })
+  const criticos = useProyectos({ ...f, semaforo: 'Rojo', limit: 5 })
+  const bloqueos = useBloqueos({ ...f, abierto: true, limit: 200 })
   const { map: usuarios } = useUsuarioMap()
   const { map: proyectos } = useProyectoMap()
 
   const anyError = total.error ?? recientes.error
-  const maxEstado = Math.max(1, ...estadosQ.map((x) => x.q.data ?? 0))
+  const maxDepto = Math.max(1, ...deptosQ.map((x) => x.q.data ?? 0))
   const semTotal = SEMAFOROS.reduce((a, s) => a + (semaforoQ[s].data ?? 0), 0)
   const bloqueosCount = bloqueos.data?.length ?? 0
 
@@ -55,17 +62,18 @@ export default function Dashboard() {
       <PageHeader
         title="Panel de portafolio"
         description="Resumen del estado de salud de los proyectos."
-        actions={<Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setCreating(true)}>Nuevo proyecto</Button>}
+        actions={creaProyectos && <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setCreating(true)}>Nuevo proyecto</Button>}
       />
 
+      <AvisoEquipoTrabajo que="el portafolio" />
       {anyError ? (
         <Card><ErrorState error={anyError} onRetry={() => { total.refetch(); recientes.refetch() }} /></Card>
       ) : (
         <div className="space-y-6">
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-            <Kpi label="Proyectos" value={total.data} loading={total.isPending} to="/proyectos" />
-            <Kpi label="En rojo" value={rojo.data} loading={rojo.isPending} tone="text-danger" to="/proyectos?semaforo=Rojo" />
-            <Kpi label="En ejecución" value={estadosQ.find((x) => x.estado === 'Ejecución')?.q.data} loading={total.isPending} to="/proyectos?estado=Ejecución" />
+            <Kpi label="Proyectos" value={total.data} loading={total.isPending} to="/proyectos?espacio=todos" />
+            <Kpi label="En rojo" value={rojo.data} loading={rojo.isPending} tone="text-danger" to="/proyectos?espacio=todos&semaforo=Rojo" />
+            <Kpi label="Activos" value={activos.data} loading={activos.isPending} to="/proyectos?espacio=todos&estado=Activo" />
             <Kpi
               label="Bloqueos abiertos" to="/bloqueos"
               value={bloqueosCount >= 200 ? '200+' : bloqueosCount} loading={bloqueos.isPending}
@@ -89,7 +97,7 @@ export default function Dashboard() {
                 <ul className="grid grid-cols-3 gap-3">
                   {SEMAFOROS.map((s) => (
                     <li key={s}>
-                      <Link to={`/proyectos?semaforo=${s}`} className="block rounded-lg p-2 -m-2 hover:bg-surface-2">
+                      <Link to={`/proyectos?espacio=todos&semaforo=${s}`} className="block rounded-lg p-2 -m-2 hover:bg-surface-2">
                         <SemaforoBadge value={s} />
                         <p className={cn('mt-2 text-2xl font-semibold tabular-nums', semaforoColor[s].text)}>{semaforoQ[s].data ?? '–'}</p>
                         <p className="text-xs text-muted">{semTotal ? Math.round(((semaforoQ[s].data ?? 0) / semTotal) * 100) : 0}%</p>
@@ -101,14 +109,14 @@ export default function Dashboard() {
             </Card>
 
             <Card>
-              <CardHeader title="Proyectos por estado" subtitle="Ciclo de vida" />
+              <CardHeader title="Proyectos por departamento" subtitle="Los conjuntos cuentan en cada departamento participante" />
               <ul className="space-y-3 p-5">
-                {estadosQ.map(({ estado, q }) => (
-                  <li key={estado}>
-                    <Link to={`/proyectos?estado=${estado}`} className="group grid grid-cols-[6.5rem_1fr_2rem] items-center gap-3 text-sm">
-                      <span className="text-muted group-hover:text-fg">{estado}</span>
+                {deptosQ.map(({ departamento, q }, i) => (
+                  <li key={departamento}>
+                    <Link to={`/proyectos?espacio=${['infraestructura', 'procesos', 'desarrollo'][i]}`} className="group grid grid-cols-[minmax(0,12rem)_1fr_2rem] items-center gap-3 text-sm">
+                      <span className="truncate text-muted group-hover:text-fg">{departamento}</span>
                       <span className="h-2 overflow-hidden rounded-full bg-surface-2">
-                        <span className="block h-full rounded-full bg-brand transition-[width] duration-500" style={{ width: `${((q.data ?? 0) / maxEstado) * 100}%` }} />
+                        <span className="block h-full rounded-full bg-brand transition-[width] duration-500" style={{ width: `${((q.data ?? 0) / maxDepto) * 100}%` }} />
                       </span>
                       <span className="text-right font-medium tabular-nums">{q.data ?? '–'}</span>
                     </Link>
@@ -121,7 +129,7 @@ export default function Dashboard() {
           <div className="grid gap-6 lg:grid-cols-2">
             <Card>
               <CardHeader title="Requieren atención" subtitle="Proyectos en rojo"
-                action={<Link to="/proyectos?semaforo=Rojo" className="inline-flex items-center gap-1 text-sm font-medium text-brand hover:underline">Ver todos <ArrowRight className="size-4" /></Link>} />
+                action={<Link to="/proyectos?espacio=todos&semaforo=Rojo" className="inline-flex items-center gap-1 text-sm font-medium text-brand hover:underline">Ver todos <ArrowRight className="size-4" /></Link>} />
               {criticos.isPending ? <div className="space-y-3 p-5"><Skeleton className="h-10" /><Skeleton className="h-10" /></div>
                 : criticos.data?.items.length ? (
                   <ul className="divide-y divide-border">
@@ -130,7 +138,7 @@ export default function Dashboard() {
                         <Link to={`/proyectos/${p.id_proyecto}`} className="flex items-center justify-between gap-3 px-5 py-3 hover:bg-surface-2">
                           <div className="min-w-0">
                             <p className="truncate text-sm font-medium">{p.nombre_proyecto}</p>
-                            <p className="text-xs text-muted">{usuarios.get(p.lider_id)?.nombre ?? '—'} · Compromiso {formatDate(p.fecha_comprometida)}</p>
+                            <p className="truncate text-xs text-muted">{p.semaforo_motivo ?? `${usuarios.get(p.lider_id)?.nombre ?? '—'} · Compromiso ${formatDate(p.fecha_comprometida)}`}</p>
                           </div>
                           <EstadoBadge value={p.estado_proyecto} />
                         </Link>
@@ -167,7 +175,7 @@ export default function Dashboard() {
 
           <Card>
             <CardHeader title="Proyectos recientes"
-              action={<Link to="/proyectos" className="inline-flex items-center gap-1 text-sm font-medium text-brand hover:underline">Ver portafolio <ArrowRight className="size-4" /></Link>} />
+              action={<Link to="/proyectos?espacio=todos" className="inline-flex items-center gap-1 text-sm font-medium text-brand hover:underline">Ver portafolio <ArrowRight className="size-4" /></Link>} />
             {recientes.isPending ? <div className="space-y-3 p-5"><Skeleton className="h-10" /><Skeleton className="h-10" /><Skeleton className="h-10" /></div>
               : recientes.data?.items.length ? (
                 <ul className="divide-y divide-border">
@@ -186,7 +194,7 @@ export default function Dashboard() {
               ) : (
                 <EmptyState icon={<FolderKanban className="size-6" />} title="Aún no hay proyectos"
                   description="Crea el primero para comenzar a gestionar tu portafolio."
-                  action={<Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setCreating(true)}>Nuevo proyecto</Button>} />
+                  action={creaProyectos && <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setCreating(true)}>Nuevo proyecto</Button>} />
               )}
           </Card>
         </div>

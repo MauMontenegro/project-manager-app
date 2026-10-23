@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { useQueries } from '@tanstack/react-query'
 import { http } from '@/lib/http'
-import type { Etapa } from '@/types/api'
+import { aplanarProyectos, type Etapa } from '@/types/api'
 import { keys, useEmpresas, useProyectos, useUsuarios } from './hooks'
 
 /** Mapas id → nombre para resolver FKs en tablas y listas. */
@@ -17,9 +17,10 @@ export function useEmpresaMap() {
   return { map, ...q }
 }
 
+/** Incluye conjuntos y subproyectos. */
 export function useProyectoMap() {
   const q = useProyectos({ limit: 200 })
-  const map = useMemo(() => new Map((q.data?.items ?? []).map((p) => [p.id_proyecto, p])), [q.data])
+  const map = useMemo(() => new Map(aplanarProyectos(q.data?.items ?? []).map((p) => [p.id_proyecto, p])), [q.data])
   return { map, ...q }
 }
 

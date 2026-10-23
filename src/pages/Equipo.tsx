@@ -1,120 +1,103 @@
-import { useState } from 'react'
-import { Pencil, Plus, UserX, Users, X } from 'lucide-react'
-import { useAreas, useDeactivateUsuario, useUsuarios } from '@/api/hooks'
-import { Badge } from '@/components/ui/Badge'
-import { Button, IconButton } from '@/components/ui/Button'
-import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
-import { FilterSelect } from '@/components/ui/Field'
-import { EmptyState, ErrorState, Skeleton } from '@/components/ui/Feedback'
-import { Avatar, Card, PageHeader, Table, Td, Th } from '@/components/ui/Layout'
-import { useToast } from '@/components/ui/Toast'
+import { AvisoEquipoTrabajo, useEquipoTrabajoActivo } from '@/features/equipos-trabajo/EquipoTrabajoActivo'
+import { useMemo, useState, type ReactNode } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import { AlertTriangle, BookMarked, Gauge, Plus, UserCheck, Users } from 'lucide-react'
+import { useCapacidad } from '@/api/hooks'
+import { usePermisos } from '@/auth/AuthProvider'
+import { Button } from '@/components/ui/Button'
+import { Card, PageHeader } from '@/components/ui/Layout'
+import { Tabs } from '@/components/ui/Tabs'
+import { DisponibilidadTab } from '@/features/equipo/DisponibilidadTab'
+import { OrganigramaTab } from '@/features/equipo/OrganigramaTab'
+import { PersonasTab } from '@/features/equipo/PersonasTab'
+import { CatalogosModal } from '@/features/usuarios/CatalogosModal'
 import { UsuarioFormModal } from '@/features/usuarios/UsuarioFormModal'
-import { formatNumber } from '@/lib/format'
-import { useDebounce } from '@/lib/useDebounce'
-import { PERFILES_TECNICOS, type PerfilTecnico, type Usuario } from '@/types/api'
+import { cn } from '@/lib/cn'
+import { bandaSemana } from '@/lib/capacidad'
+import { num } from '@/lib/format'
+import type { Usuario } from '@/types/api'
+
+type Vista = 'personas' | 'disponibilidad' | 'organigrama'
+const VISTAS: Vista[] = ['personas', 'disponibilidad', 'organigrama']
 
 export default function Equipo() {
-  const toast = useToast()
-  const [search, setSearch] = useState('')
-  const q = useDebounce(search.trim())
-  const [perfil, setPerfil] = useState('')
-  const [area, setArea] = useState('')
-  const [activo, setActivo] = useState('true')
+  const permisos = usePermisos()
+  const [params, setParams] = useSearchParams()
+  const vista = (VISTAS.find((v) => v === params.get('vista')) ?? 'personas') as Vista
+  const setVista = (v: Vista) => setParams(v === 'personas' ? {} : { vista: v }, { replace: true })
   const [editing, setEditing] = useState<Usuario | 'new' | null>(null)
-  const [deactivating, setDeactivating] = useState<Usuario | null>(null)
+  const [catalogos, setCatalogos] = useState(false)
 
-  const usuarios = useUsuarios({
-    q: q || undefined,
-    perfil_tecnico: (perfil || undefined) as PerfilTecnico | undefined,
-    id_area: area ? Number(area) : undefined,
-    activo: activo === '' ? undefined : activo === 'true',
-  })
-  const areas = useAreas()
-  const areaNombre = new Map(areas.data?.map((a) => [a.id_area, a.nombre_area]))
-  const deactivate = useDeactivateUsuario()
-  const hasFilters = !!(search || perfil || area) || activo !== 'true'
-  const clear = () => { setSearch(''); setPerfil(''); setArea(''); setActivo('true') }
+  // Una sola consulta de la semana actual alimenta KPIs, tabla y organigrama.
+  const semana = useCapacidad({ semanas: 1 })
+  const capacidad = useMemo(() => new Map((semana.data ?? []).map((c) => [c.id_usuario, c])), [semana.data])
+  // Con un equipo de trabajo activo, los KPIs y las listas son de sus personas.
+  const { id: equipoActivo, miembros } = useEquipoTrabajoActivo()
+  const kpis = useMemo(() => {
+    const semanas = (semana.data ?? []).filter((c) => equipoActivo == null || miembros.has(c.id_usuario)).map((c) => c.semanas[0])
+    const disponibles = semanas.reduce((a, s) => a + num(s.horas_disponibles), 0)
+    const asignadas = semanas.reduce((a, s) => a + num(s.horas_asignadas), 0)
+    return {
+      total: semanas.length,
+      utilizacion: disponibles > 0 ? Math.round((asignadas / disponibles) * 100) : null,
+      sobreasignados: semanas.filter((s) => bandaSemana(s) === 'sobrecarga').length,
+      libres: semanas.filter((s) => bandaSemana(s) === 'disponible').length,
+      horasLibres: Math.max(0, Math.round(disponibles - asignadas)),
+    }
+  }, [semana.data, equipoActivo, miembros])
 
   return (
     <>
-      <PageHeader title="Equipo" description="Personas disponibles para liderar y ejecutar proyectos."
-        actions={<Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setEditing('new')}>Nueva persona</Button>} />
+      <PageHeader title="Equipo" description="Personas, recursos externos y activos de la DTI: quién es quién, qué sabe y cuánta capacidad tiene."
+        actions={<>
+          <Button icon={<BookMarked className="size-4" />} onClick={() => setCatalogos(true)}>Catálogos</Button>
+          {permisos.gestionaEquipo && (
+            <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setEditing('new')}>Nuevo recurso</Button>
+          )}
+        </>} />
 
-      <Card>
-        <div className="flex flex-wrap items-center gap-2 border-b border-border p-4">
-          <input
-            type="search" aria-label="Buscar por nombre o correo" placeholder="Buscar por nombre o correo…"
-            value={search} onChange={(e) => setSearch(e.target.value)}
-            className="h-9 w-full rounded-lg border border-border-strong bg-surface px-3 text-sm placeholder:text-muted/70 focus:border-brand focus:ring-4 focus:ring-[var(--ring)] focus:outline-none sm:w-64"
-          />
-          <FilterSelect label="Perfil técnico" value={perfil} onChange={setPerfil}>
-            <option value="">Todos los perfiles</option>
-            {PERFILES_TECNICOS.map((p) => <option key={p}>{p}</option>)}
-          </FilterSelect>
-          <FilterSelect label="Área" value={area} onChange={setArea}>
-            <option value="">Todas las áreas</option>
-            {areas.data?.map((a) => <option key={a.id_area} value={a.id_area}>{a.nombre_area}</option>)}
-          </FilterSelect>
-          <FilterSelect label="Estado" value={activo} onChange={setActivo}>
-            <option value="true">Activos</option>
-            <option value="false">Inactivos</option>
-            <option value="">Todos</option>
-          </FilterSelect>
-          {hasFilters && <Button size="sm" variant="ghost" icon={<X className="size-4" />} onClick={clear}>Restablecer</Button>}
-        </div>
+      <AvisoEquipoTrabajo que="las personas" />
+      <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Kpi icon={<Users className="size-4" />} label="Recursos activos" value={kpis.total} loading={semana.isPending} />
+        <Kpi icon={<Gauge className="size-4" />} label="Utilización esta semana" loading={semana.isPending}
+          value={kpis.utilizacion === null ? '—' : `${kpis.utilizacion} %`} sub="Asignado vs. capacidad planificable" />
+        <Kpi icon={<AlertTriangle className="size-4" />} label="Sobreasignados" value={kpis.sobreasignados} loading={semana.isPending}
+          tone={kpis.sobreasignados > 0 ? 'danger' : undefined} sub={kpis.sobreasignados > 0 ? 'Más del 100 % de su capacidad' : 'Nadie por encima del 100 %'}
+          onClick={kpis.sobreasignados > 0 ? () => setVista('disponibilidad') : undefined} />
+        <Kpi icon={<UserCheck className="size-4" />} label="Con disponibilidad" value={kpis.libres} loading={semana.isPending}
+          tone="ok" sub={`≈ ${kpis.horasLibres} h libres en el equipo`} onClick={() => setVista('disponibilidad')} />
+      </div>
 
-        {usuarios.isPending ? (
-          <div className="space-y-3 p-4">{[...Array(5)].map((_, i) => <Skeleton key={i} className="h-12" />)}</div>
-        ) : usuarios.isError ? (
-          <ErrorState error={usuarios.error} onRetry={() => usuarios.refetch()} />
-        ) : usuarios.data.length === 0 ? (
-          <EmptyState icon={<Users className="size-6" />} title="No se encontraron personas"
-            description={hasFilters ? 'Prueba ajustando los filtros.' : 'Agrega a la primera persona del equipo.'} />
-        ) : (
-          <Table>
-            <thead>
-              <tr><Th>Persona</Th><Th>Perfil</Th><Th>Área</Th><Th className="text-right">Capacidad</Th><Th>Estado</Th><Th><span className="sr-only">Acciones</span></Th></tr>
-            </thead>
-            <tbody className={usuarios.isPlaceholderData ? 'opacity-60 transition-opacity' : ''}>
-              {usuarios.data.map((u) => (
-                <tr key={u.id_usuario}>
-                  <Td>
-                    <div className="flex items-center gap-3">
-                      <Avatar name={u.nombre} />
-                      <div className="min-w-0">
-                        <p className="truncate font-medium">{u.nombre}</p>
-                        <p className="truncate text-xs text-muted">{u.correo}</p>
-                      </div>
-                    </div>
-                  </Td>
-                  <Td><Badge tone={u.perfil_tecnico === 'Líder' ? 'brand' : 'neutral'}>{u.perfil_tecnico}</Badge></Td>
-                  <Td className="text-muted">{areaNombre.get(u.id_area) ?? '—'}</Td>
-                  <Td className="text-right whitespace-nowrap tabular-nums">{formatNumber(u.capacidad_horas_semanales, 1)} h/sem</Td>
-                  <Td>{u.activo ? <Badge tone="ok" dot>Activo</Badge> : <Badge tone="neutral" dot>Inactivo</Badge>}</Td>
-                  <Td>
-                    <div className="flex justify-end">
-                      <IconButton label={`Editar a ${u.nombre}`} onClick={() => setEditing(u)}><Pencil className="size-4" /></IconButton>
-                      {u.activo && <IconButton label={`Dar de baja a ${u.nombre}`} onClick={() => setDeactivating(u)}><UserX className="size-4" /></IconButton>}
-                    </div>
-                  </Td>
-                </tr>
-              ))}
-            </tbody>
-          </Table>
-        )}
-      </Card>
+      <div className="mb-4">
+        <Tabs label="Vistas del equipo" value={vista} onChange={setVista}
+          tabs={[{ id: 'personas', label: 'Personas' }, { id: 'disponibilidad', label: 'Disponibilidad' }, { id: 'organigrama', label: 'Organigrama' }]} />
+      </div>
+      <div role="tabpanel" id={`panel-${vista}`} aria-labelledby={`tab-${vista}`}>
+        {vista === 'personas' && <PersonasTab capacidad={capacidad} onEdit={setEditing} />}
+        {vista === 'disponibilidad' && <DisponibilidadTab />}
+        {vista === 'organigrama' && <OrganigramaTab capacidad={capacidad} />}
+      </div>
 
+      {catalogos && <CatalogosModal onClose={() => setCatalogos(false)} />}
       {editing && <UsuarioFormModal usuario={editing === 'new' ? undefined : editing} onClose={() => setEditing(null)} />}
-      <ConfirmDialog
-        open={!!deactivating} title="Dar de baja a la persona" confirmLabel="Dar de baja" danger
-        loading={deactivate.isPending} error={deactivate.error}
-        onClose={() => { setDeactivating(null); deactivate.reset() }}
-        onConfirm={() => deactivating && deactivate.mutate(deactivating.id_usuario, {
-          onSuccess: () => { toast.success('Persona dada de baja'); setDeactivating(null) },
-        })}
-      >
-        <p><strong className="text-fg">{deactivating?.nombre}</strong> quedará inactivo y no podrá ser líder ni asignarse a nuevas etapas. Podrás reactivarlo editando su perfil.</p>
-      </ConfirmDialog>
     </>
+  )
+}
+
+function Kpi({ icon, label, value, sub, tone, loading, onClick }: {
+  icon: ReactNode; label: string; value: ReactNode; sub?: string; tone?: 'danger' | 'ok'; loading?: boolean; onClick?: () => void
+}) {
+  const Tag = onClick ? 'button' : 'div'
+  return (
+    <Card className="p-0">
+      <Tag type={onClick ? 'button' : undefined} onClick={onClick}
+        className={cn('flex h-full w-full flex-col gap-1 rounded-xl p-4 text-left', onClick && 'transition-colors hover:bg-surface-2/60 focus-visible:ring-4 focus-visible:ring-[var(--ring)] focus-visible:outline-none')}>
+        <span className="flex items-center gap-1.5 text-xs font-medium text-muted">{icon}{label}</span>
+        {loading ? <span className="my-1 h-7 w-16 animate-pulse rounded bg-surface-2" /> : (
+          <span className={cn('text-2xl font-semibold tracking-tight tabular-nums text-fg', tone === 'danger' && 'text-danger')}>{value}</span>
+        )}
+        {sub && <span className="text-xs text-muted">{sub}</span>}
+      </Tag>
+    </Card>
   )
 }

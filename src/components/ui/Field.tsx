@@ -8,7 +8,7 @@ const control =
   'disabled:cursor-not-allowed disabled:bg-surface-2 disabled:opacity-70 aria-[invalid=true]:border-danger'
 
 interface FieldProps {
-  label: string
+  label: ReactNode
   error?: string
   hint?: string
   required?: boolean
@@ -35,7 +35,7 @@ export function Field({ label, error, hint, required, className, children }: Fie
   )
 }
 
-type Common = { label: string; error?: string; hint?: string; fieldClassName?: string }
+type Common = { label: ReactNode; error?: string; hint?: string; fieldClassName?: string }
 
 export const TextField = forwardRef<HTMLInputElement, Common & InputHTMLAttributes<HTMLInputElement>>(
   function TextField({ label, error, hint, fieldClassName, className, required, ...rest }, ref) {

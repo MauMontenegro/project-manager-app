@@ -1,15 +1,24 @@
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
-import { AlertOctagon, Building2, FolderKanban, LayoutDashboard, Menu, Moon, Sun, Users, X } from 'lucide-react'
+import { AlertOctagon, Boxes, Building2, FolderKanban, KanbanSquare, LayoutDashboard, LogOut, Menu, Moon, Settings, Sun, UserRound, Users, X } from 'lucide-react'
+import { useAuth, usePermisos } from '@/auth/AuthProvider'
 import { cn } from '@/lib/cn'
 import { IconButton } from '@/components/ui/Button'
+import { Avatar } from '@/components/ui/Layout'
+import { NotificacionesBell } from './NotificacionesBell'
+import { Asistente } from '@/features/asistente/Asistente'
+import { EquipoTrabajoProvider, SelectorEquipoTrabajo } from '@/features/equipos-trabajo/EquipoTrabajoActivo'
 
 const nav = [
   { to: '/', label: 'Panel', icon: LayoutDashboard, end: true },
+  { to: '/tareas', label: 'Mis tareas', icon: KanbanSquare },
+  { to: '/perfil', label: 'Mi perfil', icon: UserRound },
   { to: '/proyectos', label: 'Proyectos', icon: FolderKanban },
   { to: '/bloqueos', label: 'Bloqueos', icon: AlertOctagon },
+  { to: '/equipos-trabajo', label: 'Equipos de trabajo', icon: Boxes },
   { to: '/equipo', label: 'Equipo', icon: Users },
   { to: '/organizacion', label: 'Organización', icon: Building2 },
+  { to: '/configuracion', label: 'Configuración', icon: Settings, soloGestion: true },
 ]
 
 function useTheme() {
@@ -36,9 +45,10 @@ function Brand() {
 }
 
 function NavList({ onNavigate }: { onNavigate?: () => void }) {
+  const { gestionaEquipo } = usePermisos()
   return (
     <nav aria-label="Principal" className="flex flex-col gap-1">
-      {nav.map(({ to, label, icon: Icon, end }) => (
+      {nav.filter((n) => !n.soloGestion || gestionaEquipo).map(({ to, label, icon: Icon, end }) => (
         <NavLink
           key={to} to={to} end={end} onClick={onNavigate}
           className={({ isActive }) => cn(
@@ -50,6 +60,26 @@ function NavList({ onNavigate }: { onNavigate?: () => void }) {
         </NavLink>
       ))}
     </nav>
+  )
+}
+
+function UserCard() {
+  const { sesion, salir } = useAuth()
+  if (!sesion) return null
+  const contenido = (
+    <>
+      <Avatar name={sesion.nombre} />
+      <div className="min-w-0 flex-1 text-left">
+        <p className="truncate text-sm font-medium text-fg">{sesion.nombre}</p>
+        <p className="truncate text-xs text-muted">{sesion.rol}{sesion.departamento ? ` · ${sesion.departamento}` : ''}</p>
+      </div>
+    </>
+  )
+  return (
+    <div className="flex items-center gap-2.5 rounded-lg px-2 py-2">
+      <NavLink to="/perfil" title="Mi perfil" className="flex min-w-0 flex-1 items-center gap-2.5 rounded-md hover:opacity-80">{contenido}</NavLink>
+      {sesion.auth_habilitada && <IconButton label="Cerrar sesión" onClick={() => void salir()}><LogOut className="size-4" /></IconButton>}
+    </div>
   )
 }
 
@@ -67,6 +97,7 @@ export function AppShell() {
   )
 
   return (
+    <EquipoTrabajoProvider>
     <div className="min-h-dvh lg:pl-64">
       <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[70] focus:rounded-lg focus:bg-brand focus:px-3 focus:py-2 focus:text-brand-fg">
         Saltar al contenido
@@ -75,9 +106,12 @@ export function AppShell() {
       {/* Sidebar escritorio */}
       <aside className="fixed inset-y-0 left-0 hidden w-64 flex-col border-r border-border bg-surface p-4 lg:flex">
         <div className="px-2 py-2"><Brand /></div>
-        <div className="mt-6 flex-1"><NavList /></div>
+        <div className="mt-4"><SelectorEquipoTrabajo /></div>
+        <div className="mt-4 flex-1 overflow-y-auto"><NavList /></div>
+        <div className="border-t border-border pt-2"><UserCard /></div>
         <div className="flex items-center justify-between border-t border-border px-2 pt-3">
-          <span className="text-xs text-muted">Tema</span>{themeBtn}
+          <NotificacionesBell />
+          <div className="flex items-center gap-1"><span className="text-xs text-muted">Tema</span>{themeBtn}</div>
         </div>
       </aside>
 
@@ -85,6 +119,7 @@ export function AppShell() {
       <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-border bg-surface/90 px-4 backdrop-blur lg:hidden">
         <Brand />
         <div className="flex items-center">
+          <NotificacionesBell alinear="derecha" />
           {themeBtn}
           <IconButton label="Abrir menú" onClick={() => setOpen(true)} aria-expanded={open}><Menu className="size-5" /></IconButton>
         </div>
@@ -98,7 +133,9 @@ export function AppShell() {
               <Brand />
               <IconButton label="Cerrar menú" onClick={() => setOpen(false)}><X className="size-5" /></IconButton>
             </div>
-            <NavList onNavigate={() => setOpen(false)} />
+            <div className="mb-4"><SelectorEquipoTrabajo onNavigate={() => setOpen(false)} /></div>
+            <div className="flex-1 overflow-y-auto"><NavList onNavigate={() => setOpen(false)} /></div>
+            <div className="border-t border-border pt-2"><UserCard /></div>
           </div>
         </div>
       )}
@@ -106,6 +143,8 @@ export function AppShell() {
       <main id="main" className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
         <Outlet />
       </main>
+      <Asistente />
     </div>
+    </EquipoTrabajoProvider>
   )
 }

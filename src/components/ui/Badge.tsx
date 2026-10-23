@@ -32,12 +32,11 @@ export const semaforoTone: Record<Semaforo, Tone> = { Verde: 'ok', Amarillo: 'wa
 export const SemaforoBadge = ({ value }: { value: Semaforo }) => <Badge tone={semaforoTone[value]} dot>{value}</Badge>
 
 const estadoTone: Record<EstadoProyecto, Tone> = {
-  Iniciación: 'info', Planeación: 'brand', Ejecución: 'ok', Cierre: 'neutral', Cancelado: 'danger', Pausado: 'warn',
+  'Sin Iniciar': 'neutral', Activo: 'brand', 'En Revisión': 'info', Pausado: 'warn', Bloqueado: 'danger',
+  Cancelado: 'danger', Completado: 'ok',
 }
-export const EstadoBadge = ({ value }: { value: EstadoProyecto }) => <Badge tone={estadoTone[value]}>{value}</Badge>
-
-const etapaTone: Record<EstadoEtapa, Tone> = { Pendiente: 'neutral', 'En Curso': 'brand', Detenido: 'danger', Completado: 'ok' }
-export const EtapaBadge = ({ value }: { value: EstadoEtapa }) => <Badge tone={etapaTone[value]}>{value}</Badge>
+export const EstadoBadge = ({ value }: { value: EstadoProyecto }) => <Badge tone={estadoTone[value]} dot>{value}</Badge>
+export const EtapaBadge = ({ value }: { value: EstadoEtapa }) => <Badge tone={estadoTone[value]}>{value}</Badge>
 
 const impactoTone: Record<NivelImpacto, Tone> = { Alto: 'danger', Medio: 'warn', Bajo: 'ok' }
 export const ImpactoBadge = ({ value }: { value: NivelImpacto }) => <Badge tone={impactoTone[value]}>Impacto {value.toLowerCase()}</Badge>

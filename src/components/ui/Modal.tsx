@@ -9,12 +9,12 @@ interface Props {
   onClose: () => void
   title: string
   description?: string
-  size?: 'sm' | 'md' | 'lg'
+  size?: 'sm' | 'md' | 'lg' | 'xl'
   children: ReactNode
   footer?: ReactNode
 }
 
-const widths = { sm: 'max-w-md', md: 'max-w-xl', lg: 'max-w-3xl' }
+const widths = { sm: 'max-w-md', md: 'max-w-xl', lg: 'max-w-3xl', xl: 'max-w-5xl' }
 
 const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])'
 
@@ -30,8 +30,9 @@ export function Modal({ open, onClose, title, description, size = 'md', children
     const prevOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
 
-    // Foco inicial: primer campo del formulario, si existe.
-    const first = panel.current?.querySelector<HTMLElement>('input,select,textarea') ??
+    // Foco inicial: el campo marcado con data-autofocus o, si no hay, el primero del formulario.
+    const first = panel.current?.querySelector<HTMLElement>('[data-autofocus]') ??
+      panel.current?.querySelector<HTMLElement>('input,select,textarea') ??
       panel.current?.querySelector<HTMLElement>(FOCUSABLE)
     first?.focus()
 
